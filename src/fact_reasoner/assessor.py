@@ -672,7 +672,7 @@ class FactReasoner:
         # Write the atoms
         for aid, atom in self.atoms.items():
             atom_data = {
-                "id": aid, "text": atom.get_text(), "contexts": list(atom.get_contexts().keys())
+                "id": aid, "text": atom.get_text(), "original": atom.get_original(), "contexts": list(atom.get_contexts().keys())
             }
             if atom.get_label() is not None:
                 atom_data["label"] = atom.get_label()
@@ -983,7 +983,7 @@ class FactReasoner:
 
         for aid, atom in self.atoms.items():
             atom_data = {
-                "id": aid, "text": atom.get_text(), "contexts": list(atom.get_contexts().keys())
+                "id": aid, "text": atom.get_text(), "original": atom.get_original(), "contexts": list(atom.get_contexts().keys())
             }
             if atom.get_label() is not None:
                 atom_data["label"] = atom.get_label()

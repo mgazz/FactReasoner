@@ -15,6 +15,7 @@
 import asyncio
 import logging
 import re
+import threading
 from concurrent.futures import (
     ThreadPoolExecutor,
     as_completed,
@@ -49,6 +50,41 @@ from fact_reasoner.search_api import SearchAPI
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
+
+
+# Thread-local storage for persistent event loops used by worker threads.
+# Using a persistent loop (rather than asyncio.run() which creates and closes
+# a fresh loop each call) avoids the httpx "Event loop is closed" noise: httpx
+# schedules async cleanup tasks that land on the loop *after* asyncio.run()
+# has already shut it down. With a persistent loop the tasks complete normally.
+_tl = threading.local()
+
+
+def _run_async_in_thread(coro):
+    """Run *coro* on this thread's persistent event loop.
+
+    Each worker thread gets exactly one event loop for its lifetime (stored in
+    thread-local storage).  Using a long-lived loop instead of creating a new
+    one per call lets httpx/anyio schedule and complete their cleanup tasks
+    before the loop is ever closed.
+
+    After the coroutine completes, one extra ``asyncio.sleep(0)`` iteration
+    drains any pending callbacks (e.g. httpx ``AsyncClient.aclose()`` tasks)
+    so they run to completion before this function returns.  This eliminates
+    the ``RuntimeError: Event loop is closed`` noise from httpx cleanup.
+
+    ``asyncio.set_event_loop`` is intentionally NOT called here: that setter
+    is process-global and would clobber the event loop registered by uvicorn
+    on the main thread, causing the server to exit after the first request.
+    """
+    loop = getattr(_tl, "loop", None)
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        _tl.loop = loop
+    result = loop.run_until_complete(coro)
+    loop.run_until_complete(asyncio.sleep(0))  # drain httpx cleanup tasks
+    return result
+
 
 DEFAULT_COLLECTION_NAME = "lit_agent_demo"
 DEFAULT_DB_PATH = "/tmp/nasa_contrib/accelerated-discovery/chroma_db"
@@ -698,7 +734,7 @@ class ContextRetriever:
             and atom is not None
             and len(contexts) > 0
         ):
-            results = asyncio.run(
+            results = _run_async_in_thread(
                 self.context_summarizer.run_batch(
                     [c.get_text() for c in contexts], atom.text
                 )

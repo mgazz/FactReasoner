@@ -140,3 +140,6 @@ log_*.txt
 
 # Results
 results
+
+# Merlin compiled binary (built locally from source)
+artifacts/merlin

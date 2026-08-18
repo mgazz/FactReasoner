@@ -29,6 +29,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import uuid
 
 from fact_reasoner.markov_network import MarkovNetwork
@@ -104,12 +105,14 @@ def run_merlin(
     vars_mapping = network.index_to_variable()
 
     # Unique temporary file names so concurrent runs do not collide.
+    # Use the system temp dir so writes succeed even from a read-only CWD.
     net_id = str(uuid.uuid1())
-    input_filename = f"markov_network_{net_id}.uai"
+    tmp = tempfile.gettempdir()
+    input_filename = os.path.join(tmp, f"markov_network_{net_id}.uai")
     network.write_uai(input_filename)
 
     output_format = "json"
-    output_file = f"output_{net_id}"
+    output_file = os.path.join(tmp, f"output_{net_id}")
     output_filename = f"{output_file}.{task}.{output_format}"
 
     args = [

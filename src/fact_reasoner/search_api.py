@@ -18,7 +18,6 @@ import json
 import logging
 import os
 import sqlite3
-import sys
 from ast import literal_eval
 
 import requests
@@ -99,8 +98,9 @@ class SearchAPI:
         for query in claim_lst:
             search_result = self.get_search_res(query)
             if "statusCode" in search_result:
-                logger.error(search_result["message"])
-                sys.exit()
+                msg = search_result.get("message", f"Serper API error (statusCode={search_result['statusCode']})")
+                logger.error(msg)
+                raise RuntimeError(f"Serper search failed: {msg}")
             organic_res = search_result.get("organic", [])
 
             search_res_lst = [
