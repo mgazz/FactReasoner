@@ -361,7 +361,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     # Server
     parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1).")
     parser.add_argument("--port", type=int, default=8000, help="Bind port (default: 8000).")
-    parser.add_argument("--reload", action="store_true", help="Enable uvicorn auto-reload (dev).")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=int(os.getenv("FR_WORKERS", "1")),
+        help="Number of Gunicorn worker processes (default: 1, or FR_WORKERS env). "
+             "Values >1 use Gunicorn + UvicornWorker so the event loop in each worker "
+             "remains independent — a long /assess call cannot starve /health in another "
+             "worker. Requires the 'server' extra (gunicorn). Ignored when --reload is set.",
+    )
+    parser.add_argument("--reload", action="store_true", help="Enable uvicorn auto-reload (dev only, forces single worker).")
 
     # Backend — mirrors the CLI flags in cli.py.
     parser.add_argument(
@@ -410,12 +419,49 @@ def main() -> None:
     # Stash config in global state so the lifespan hook can read it.
     _server_state["config"] = args
 
-    uvicorn.run(
-        app,
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
-    )
+    if args.reload or args.workers == 1:
+        # Dev mode or single-worker: run uvicorn directly (simpler, supports --reload).
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            reload=args.reload,
+        )
+    else:
+        # Production: Gunicorn managing multiple UvicornWorker processes.
+        # Each worker gets its own isolated event loop, so a long /assess call
+        # in one worker cannot block the /health probe served by another.
+        from gunicorn.app.base import BaseApplication
+
+        class _StandaloneApp(BaseApplication):
+            def __init__(self, application, options):
+                self.application = application
+                self.options = options
+                super().__init__()
+
+            def load_config(self):
+                for key, value in self.options.items():
+                    self.cfg.set(key, value)
+
+            def load(self):
+                return self.application
+
+        _StandaloneApp(
+            app,
+            {
+                "bind": f"{args.host}:{args.port}",
+                "workers": args.workers,
+                "worker_class": "uvicorn.workers.UvicornWorker",
+                # The /assess pipeline makes many sequential LLM calls and can
+                # easily exceed the Gunicorn default of 30 s.  Set a generous
+                # timeout so the worker is not killed mid-request.
+                "timeout": int(os.getenv("FR_WORKER_TIMEOUT", "600")),
+                # Forward gunicorn access/error logs to stdout so they appear in
+                # pod logs alongside the application output.
+                "accesslog": "-",
+                "errorlog": "-",
+            },
+        ).run()
 
 
 if __name__ == "__main__":
