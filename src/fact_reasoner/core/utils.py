@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
 import time
 
 import nltk
@@ -33,6 +32,7 @@ from .base import (  # noqa: F401
     Context,
     Relation,
 )
+from ._async_runner import run_coroutine
 from .nli import NLIExtractor
 from .nli_cache import extractor_identity
 from .nli_config import FAITHFUL, NLIPairConfig
@@ -129,7 +129,7 @@ def predict_nli_relationships(
     if todo:
         sub_premises = [premises[i] for i in todo]
         sub_hypotheses = [hypotheses[i] for i in todo]
-        computed = asyncio.run(
+        computed = run_coroutine(
             nli_extractor.run_batch(sub_premises, sub_hypotheses)
         )
         for slot, result in zip(todo, computed):
