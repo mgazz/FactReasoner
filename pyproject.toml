@@ -51,6 +51,7 @@ dependencies = [
     "thefuzz",
     "tqdm",
     "wikipedia",
+    "gravis"
 ]
 
 [project.optional-dependencies]
@@ -60,7 +61,7 @@ rits = ["mellea-ibm"]
 # imported, so this only needs to be installed where the server is launched.
 vllm = ["vllm"]
 # HTTP server mode: exposes FactReasoner as a REST API.
-server = ["fastapi>=0.111", "uvicorn[standard]>=0.29", "gunicorn>=22.0"]
+server = ["fastapi>=0.111", "uvicorn[standard]>=0.29", "gunicorn>=22.0", "gravis", "redis>=5.0"]
 dev = ["pytest", "ruff", "mypy", "build", "twine"]
 
 [project.scripts]
